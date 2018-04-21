@@ -14,7 +14,7 @@
 #include <sstream>
 #include <string>
 #include <iterator>
-
+#include <limits>
 #include "particle_filter.h"
 
 using namespace std;
@@ -31,6 +31,7 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 	normal_distribution<double> dist_theta(theta, std[2]);
 
 	num_particles=100;
+	weights.resize(num_particles);
 
 	for (int i=0;i<num_particles;i++)
 	{
@@ -60,11 +61,21 @@ void ParticleFilter::prediction(double delta_t, double std_pos[], double velocit
 	normal_distribution<double> dist_y(0.0, std_pos[1]);
 	normal_distribution<double> dist_theta(0.0, std_pos[2]);
 
+	//Avoid division by zero
+	//TODO: Fix this issue
+	if(fabsf(yaw_rate)<0.01)
+	{
+	   yaw_rate=0.001;
+	}
 	for (int i=0;i<num_particles;i++)
 	{
         particles[i].x += (velocity / yaw_rate) * (sin(particles[i].theta + yaw_rate * delta_t) - sin(particles[i].theta)) + dist_x(gen);
         particles[i].y += (velocity / yaw_rate) * (cos(particles[i].theta) - cos(particles[i].theta + yaw_rate * delta_t)) + dist_y(gen);
         particles[i].theta += yaw_rate * delta_t + dist_theta(gen);
+        if (isnan(particles[i].x))
+        {
+        	std::cout<<std::endl<<"yaw_rate: "<< yaw_rate;
+        }
 	}
 
 }
@@ -74,6 +85,8 @@ void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::ve
 	//   observed measurement to this particular landmark.
 	// NOTE: this method will NOT be called by the grading code. But you will probably find it useful to 
 	//   implement this method and use it as a helper during the updateWeights phase.
+
+
 
 }
 
@@ -89,13 +102,78 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 	//   and the following is a good resource for the actual equation to implement (look at equation 
 	//   3.33
 	//   http://planning.cs.uiuc.edu/node99.html
+
+	// Homogenous transformation
+	float trans_x=0.0f;
+	float trans_y=0.0f;
+	float min_distance = std::numeric_limits<float>::max();;
+	float distance = 0.0f;
+	int id_near_lan=0;
+	float weight=1.0;
+	float dif_x=0.0f;
+	float dif_y=0.0f;
+
+	float sigma_xx = std_landmark[0]*std_landmark[0];
+	float sigma_yy = std_landmark[1]*std_landmark[1];
+	float sigma_xy = std_landmark[0]*std_landmark[1];
+
+	for (int id_part = 0; id_part < num_particles; id_part++)
+	{
+		weight=1.0f;
+		for (uint id_obs = 0; id_obs < observations.size(); id_obs++)
+		{
+			//Homogenous transformation VCS->MAP
+			trans_x = observations[id_obs].x * cos(particles[id_part].theta) - observations[id_obs].y * sin(particles[id_part].theta) + particles[id_part].x;
+			trans_y = observations[id_obs].x * sin(particles[id_part].theta) + observations[id_obs].y * cos(particles[id_part].theta) + particles[id_part].y;
+
+			// Get the nearest landmark
+			min_distance = std::numeric_limits<float>::max();
+
+			for (uint id_lan = 0; id_lan < map_landmarks.landmark_list.size(); id_lan++)
+			{
+				distance = fabs(trans_x - map_landmarks.landmark_list[id_lan].x_f) + fabs(trans_y - map_landmarks.landmark_list[id_lan].y_f);
+
+				if (distance<min_distance)
+				{
+					min_distance=distance;
+					id_near_lan = id_lan;
+				}
+			}
+			dif_x = trans_x- map_landmarks.landmark_list[id_near_lan].x_f;
+			dif_y = trans_y- map_landmarks.landmark_list[id_near_lan].y_f;
+
+			weight *= exp(-0.5*((dif_x * dif_x)/sigma_xx + (dif_y * dif_y)/sigma_yy))/(2*M_PI*sigma_xy);
+			//std::cout<<std::endl<<"dif_x: "<<dif_x<<" dif_y: "<<dif_y<<" Weight: "<<weight<<" id landmark: "<<id_near_lan<<std::endl;
+			//std::cout<<"trans_x: "<<trans_x<<"trans_y: "<<trans_y <<std::endl;
+			//std::cout<<std::endl<<"obs_x: "<< observations[id_obs].x<<"obs_y: "<< observations[id_obs].x;
+			//std::cout<<std::endl<<"p_x: "<< particles[id_part].x<<"p_y: "<< particles[id_part].y<<"theta: "<< particles[id_part].y<<std::endl;
+		}
+		if (weight<0.0001)
+		{
+			weight=0.0001;
+		}
+		particles[id_part].weight = weight;
+		weights[id_part] = weight;
+
+	}
+
 }
 
 void ParticleFilter::resample() {
 	// TODO: Resample particles with replacement with probability proportional to their weight. 
 	// NOTE: You may find std::discrete_distribution helpful here.
 	//   http://en.cppreference.com/w/cpp/numeric/random/discrete_distribution
+	default_random_engine gen;
+	discrete_distribution<size_t> dist_index(weights.begin(), weights.end());
 
+	vector<Particle> resampled_particles(particles.size());
+
+	for (uint id_par = 0; id_par < particles.size(); id_par++)
+	{
+	  resampled_particles[id_par] = particles[dist_index(gen)];
+	}
+
+	particles = resampled_particles;
 }
 
 Particle ParticleFilter::SetAssociations(Particle& particle, const std::vector<int>& associations, 
@@ -109,6 +187,8 @@ Particle ParticleFilter::SetAssociations(Particle& particle, const std::vector<i
     particle.associations= associations;
     particle.sense_x = sense_x;
     particle.sense_y = sense_y;
+
+    return particle;
 }
 
 string ParticleFilter::getAssociations(Particle best)
