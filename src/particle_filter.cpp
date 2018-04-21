@@ -178,8 +178,8 @@ void ParticleFilter::resample() {
 
 	/*Wheel version. Working worse*/
 /*
-	  // Get weights and max weight.
-	  //vector<double> weights;
+	  // Get max weight.
+
 	  float maxWeight = numeric_limits<float>::min();
 	  for(int id_par = 0; id_par < num_particles; id_par++)
 	  {
