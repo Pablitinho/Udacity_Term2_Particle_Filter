@@ -30,7 +30,7 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 	normal_distribution<double> dist_y(y, std[1]);
 	normal_distribution<double> dist_theta(theta, std[2]);
 
-	num_particles=100;
+	num_particles=150;
 	weights.resize(num_particles);
 
 	for (int i=0;i<num_particles;i++)
@@ -67,17 +67,18 @@ void ParticleFilter::prediction(double delta_t, double std_pos[], double velocit
 	{
 	   yaw_rate=0.001;
 	}
+	// Estimate the displacement
 	for (int i=0;i<num_particles;i++)
 	{
         particles[i].x += (velocity / yaw_rate) * (sin(particles[i].theta + yaw_rate * delta_t) - sin(particles[i].theta)) + dist_x(gen);
         particles[i].y += (velocity / yaw_rate) * (cos(particles[i].theta) - cos(particles[i].theta + yaw_rate * delta_t)) + dist_y(gen);
         particles[i].theta += yaw_rate * delta_t + dist_theta(gen);
+        //Debug
         if (isnan(particles[i].x))
         {
         	std::cout<<std::endl<<"yaw_rate: "<< yaw_rate;
         }
 	}
-
 }
 
 void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::vector<LandmarkObs>& observations) {
@@ -87,7 +88,7 @@ void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::ve
 	//   implement this method and use it as a helper during the updateWeights phase.
 
 
-
+	// NOT NEEDED
 }
 
 void ParticleFilter::updateWeights(double sensor_range, double std_landmark[], 
@@ -113,6 +114,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 	float dif_x=0.0f;
 	float dif_y=0.0f;
 
+	// Estimate std
 	float sigma_xx = std_landmark[0]*std_landmark[0];
 	float sigma_yy = std_landmark[1]*std_landmark[1];
 	float sigma_xy = std_landmark[0]*std_landmark[1];
@@ -143,20 +145,19 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 			dif_y = trans_y- map_landmarks.landmark_list[id_near_lan].y_f;
 
 			weight *= exp(-0.5*((dif_x * dif_x)/sigma_xx + (dif_y * dif_y)/sigma_yy))/(2*M_PI*sigma_xy);
-			//std::cout<<std::endl<<"dif_x: "<<dif_x<<" dif_y: "<<dif_y<<" Weight: "<<weight<<" id landmark: "<<id_near_lan<<std::endl;
-			//std::cout<<"trans_x: "<<trans_x<<"trans_y: "<<trans_y <<std::endl;
-			//std::cout<<std::endl<<"obs_x: "<< observations[id_obs].x<<"obs_y: "<< observations[id_obs].x;
-			//std::cout<<std::endl<<"p_x: "<< particles[id_part].x<<"p_y: "<< particles[id_part].y<<"theta: "<< particles[id_part].y<<std::endl;
+
 		}
+
 		if (weight<0.0001)
 		{
 			weight=0.0001;
 		}
+
+		//Assign the new weights
 		particles[id_part].weight = weight;
 		weights[id_part] = weight;
 
 	}
-
 }
 
 void ParticleFilter::resample() {
@@ -174,6 +175,46 @@ void ParticleFilter::resample() {
 	}
 
 	particles = resampled_particles;
+
+	/*Wheel version. Working worse*/
+/*
+	  // Get weights and max weight.
+	  //vector<double> weights;
+	  float maxWeight = numeric_limits<float>::min();
+	  for(int id_par = 0; id_par < num_particles; id_par++)
+	  {
+	   // weights.push_back(particles[i].weight);
+	    if ( particles[id_par].weight > maxWeight )
+	    {
+	         maxWeight = particles[id_par].weight;
+	    }
+	  }
+
+	  // Creating distributions.
+	  uniform_real_distribution<float> dist_float(0.0, maxWeight);
+	  uniform_int_distribution<int> distInt(0, num_particles - 1);
+	  default_random_engine gen;
+
+	  // Generating index.
+	  int index = distInt(gen);
+
+	  double beta = 0.0;
+
+	  // Wheel algorithm
+	  vector<Particle> resampledParticles;
+	  for(int i = 0; i < num_particles; i++)
+	  {
+	    beta += dist_float(gen) * 2.0;
+	    while( beta > weights[index])
+	    {
+	      beta -= weights[index];
+	      index = (index + 1) % num_particles;
+	    }
+	    resampledParticles.push_back(particles[index]);
+	  }
+
+	  particles = resampledParticles;
+	  */
 }
 
 Particle ParticleFilter::SetAssociations(Particle& particle, const std::vector<int>& associations, 
